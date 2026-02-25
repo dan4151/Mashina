@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-An automated system that scans the web for trending topics, analyzes them with a local LLM, and scores them for content creation and monetization potential. Target market: Israeli audience (Hebrew + English), AI/tech niche, TikTok and Instagram.
+An automated system that scans the web for trending topics in the **Israeli market**, analyzes them with a local LLM, and scores them for content creation and monetization potential. Target: Hebrew-speaking Israelis aged 18–40 on TikTok and Instagram. **Any topic** (news, entertainment, sports, culture, tech) is valid — not just AI.
 
 ## Owner Context (Important for AI Assistants)
 
@@ -115,7 +115,7 @@ Indexes: `source`, `scraped_at`, `keyword(100)`
 | `raw_trend_id` | INT FK | References `raw_trends.id` |
 | `topic` | VARCHAR(500) | Cleaned topic name from LLM |
 | `summary` | TEXT | LLM-generated summary |
-| `niche_relevance` | TINYINT | 1–10: fit for AI/tech niche |
+| `niche_relevance` | TINYINT | 1–10: relevance to Israeli TikTok/Instagram audience |
 | `monetization_score` | TINYINT | 1–10: affiliate link potential |
 | `urgency_score` | TINYINT | 1–10: time-sensitivity |
 | `competition_score` | TINYINT | 1–10: **10 = low competition** (good) |
@@ -158,9 +158,9 @@ overall_score = round(
 ```
 
 **Weight rationale:**
-- Monetization (30%): Primary goal — affiliate revenue
-- Hebrew gap (25%): Main competitive advantage — very little Hebrew AI content exists
-- Niche relevance (15%): Must stay on-topic (AI/tech)
+- Monetization (30%): Primary goal — affiliate revenue and sponsored content
+- Hebrew gap (25%): Main competitive advantage — first to cover a topic in Hebrew wins
+- Niche relevance (15%): How strongly will the Israeli TikTok/Instagram audience connect with this?
 - Competition (15%): Lower competition = easier to rank/gain views
 - Urgency (15%): Timely content performs better
 
@@ -202,8 +202,8 @@ The `source` field is added by `insert_raw_trend()` in `models.py` — scrapers 
 |--------|---------------|
 | Google Trends | `100 - (rank * 5)` for trending; raw value for rising |
 | Reddit | `min(upvotes, 100)` |
-| Product Hunt | Fixed `70` (curated products are generally high-value) |
-| Israeli News | Fixed `60` |
+| TikTok | `100 - (rank * 5)` based on Creative Center rank |
+| Israeli News | Fixed `60` — RSS has no engagement metric |
 
 ### Error Handling Pattern
 
@@ -301,18 +301,32 @@ score = max(1, min(10, int(raw_score)))
 
 | Source | Type | Method | Rate limit |
 |--------|------|--------|-----------|
-| Google Trends Israel | Trending searches + rising AI queries | `pytrends` library | 2s delay |
-| Reddit | Rising + hot posts from 7 AI subreddits | Public JSON API (no auth) | 2s delay |
-| Product Hunt | New AI/tech products | RSS feed | None |
-| Israeli News | AI/tech articles | RSS feeds (3 publications) | 1s delay |
+| Google Trends Israel | All trending searches in Israel + rising queries | `pytrends` library | 2s delay |
+| Reddit | Rising + hot posts from Israeli subreddits | Public JSON API (no auth) | 2s delay |
+| TikTok | Trending hashtags in Israel | TikTok Creative Center API | None |
+| Israeli News | All articles from major Israeli news sites | RSS feeds (5 publications) | 1s delay |
 
-### Reddit Subreddits Monitored
-`artificial`, `ChatGPT`, `LocalLLaMA`, `MachineLearning`, `singularity`, `StableDiffusion`, `Israel`
+### Google Trends Seeds (for rising queries)
+Broad Israeli interest topics: `ישראל`, `טיקטוק`, `אינסטגרם`, `ויראלי`
+No topic filter — we want all trending searches, not just AI.
+
+### Reddit Subreddits Monitored (Israeli communities)
+`israel`, `IsraelNews`, `FIREPLACE_IL`, `israelipolitics`, `telaviv`
 
 ### Israeli News RSS Sources
-- Geektime: `https://www.geektime.co.il/feed/` (Hebrew)
+- Ynet: `https://www.ynet.co.il/Integration/StoryRss2.xml` (Hebrew) — largest Israeli portal
+- Walla News: `https://rss.walla.co.il/feed/1` (Hebrew)
+- Geektime: `https://www.geektime.co.il/feed/` (Hebrew) — tech focused
 - Calcalist Tech: `https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml` (Hebrew)
 - Globes Tech: `https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederC?iID=585` (Hebrew)
+
+**No AI/keyword filter on news** — all articles pass through to the LLM for scoring.
+
+### TikTok Creative Center
+- API endpoint: `https://ads.tiktok.com/creative_radar_api/v1/popular_trend/hashtag/list`
+- Country: `IL`, Period: last 7 days
+- No auth required (public Creative Center data)
+- If TikTok blocks the request, scraper returns `[]` silently
 
 **Note**: `praw` is in requirements.txt but unused — Reddit scraper uses the public JSON API (`reddit.com/r/{sub}/rising.json`) which requires no authentication.
 
@@ -429,7 +443,10 @@ docker-compose down -v
 - **Hebrew is the competitive moat** — always prioritize `hebrew_gap` in reasoning about what to build
 - **Don't over-engineer** — the owner prefers simple, readable code over clever abstractions
 - **All scores are 1–10** — `competition_score` and `hebrew_gap` are inverted (10 = good/low competition)
-- **The `source` field** is set by `insert_raw_trend()`, not by individual scrapers
+- **The `source` field** is set by `main.py` when calling `insert_raw_trend()`, not by individual scrapers
+- **`niche_relevance` = Israeli audience relevance** — not AI/tech relevance. Any topic an Israeli audience cares about scores high.
+- **No topic filter on scrapers** — all trends pass through to the LLM. The LLM decides what's worth scoring high.
+- **TikTok scraper may return empty** — the Creative Center API could start requiring auth. This is expected; handle gracefully.
 - **Connection pool size is 5** — don't create more than 5 concurrent DB connections
 - **`praw` is unused** — Reddit scraper uses public JSON endpoints, not the PRAW library
 - **Ollama model may change** — always read from `OLLAMA_MODEL` env var, not hardcoded strings

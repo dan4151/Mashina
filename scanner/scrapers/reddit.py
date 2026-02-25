@@ -1,34 +1,34 @@
-"""Reddit scraper - fetches rising/hot posts from AI and tech subreddits."""
+"""Reddit scraper - fetches rising/hot posts from Israeli and Hebrew subreddits."""
 
 import requests
 import time
 
-# No API key needed - using public JSON endpoints
+# Israeli and Hebrew-focused subreddits
+# Goal: find what topics Israelis are discussing right now
 SUBREDDITS = [
-    "artificial",
-    "ChatGPT",
-    "LocalLLaMA",
-    "MachineLearning",
-    "singularity",
-    "StableDiffusion",
-    "Israel",  # Local context
+    "israel",           # Main Israeli subreddit — news, culture, current events
+    "IsraelNews",       # Israeli news (English)
+    "FIREPLACE_IL",     # Large Hebrew-language Israeli community — memes, trends, pop culture
+    "israelipolitics",  # Politics and current events in Israel
+    "telaviv",          # Tel Aviv culture, lifestyle, local trends
 ]
 
 HEADERS = {
-    "User-Agent": "TrendScanner/1.0 (AI Content Research)"
+    # Reddit requires a User-Agent — identify ourselves clearly
+    "User-Agent": "TrendScanner/1.0 (Israeli Market Research)"
 }
 
 
 def scrape_reddit():
     """
-    Scrape Reddit for trending AI/tech posts.
+    Scrape Israeli Reddit communities for trending posts.
     Returns list of dicts with: keyword, title, description, popularity_score, raw_data
     """
     trends = []
 
     for subreddit in SUBREDDITS:
         try:
-            # Fetch rising posts (these are gaining traction fast)
+            # Rising posts = gaining traction fast right now
             url = f"https://www.reddit.com/r/{subreddit}/rising.json?limit=10"
             resp = requests.get(url, headers=HEADERS, timeout=15)
 
@@ -40,15 +40,15 @@ def scrape_reddit():
                     p = post["data"]
                     score = p.get("score", 0)
                     title = p.get("title", "")
-                    
+
                     trends.append({
                         "keyword": title[:200],
                         "title": title,
                         "description": (p.get("selftext", "") or "")[:500],
                         "url": f"https://reddit.com{p.get('permalink', '')}",
                         "popularity_score": min(score, 100),
-                        "region": "global",
-                        "language": "en",
+                        "region": "IL",
+                        "language": "he",  # Israeli subreddits are HE-focused even when posting in EN
                         "raw_data": {
                             "subreddit": subreddit,
                             "score": score,
@@ -58,9 +58,9 @@ def scrape_reddit():
                         },
                     })
 
-            time.sleep(2)  # Reddit rate limits
+            time.sleep(2)  # Reddit rate limits — be respectful
 
-            # Also fetch hot posts
+            # Hot posts = currently most popular
             url = f"https://www.reddit.com/r/{subreddit}/hot.json?limit=5"
             resp = requests.get(url, headers=HEADERS, timeout=15)
 
@@ -71,7 +71,7 @@ def scrape_reddit():
                 for post in posts:
                     p = post["data"]
                     if p.get("stickied"):
-                        continue
+                        continue  # Skip pinned mod posts
                     score = p.get("score", 0)
                     title = p.get("title", "")
 
@@ -81,8 +81,8 @@ def scrape_reddit():
                         "description": (p.get("selftext", "") or "")[:500],
                         "url": f"https://reddit.com{p.get('permalink', '')}",
                         "popularity_score": min(score, 100),
-                        "region": "global",
-                        "language": "en",
+                        "region": "IL",
+                        "language": "he",
                         "raw_data": {
                             "subreddit": subreddit,
                             "score": score,
@@ -98,5 +98,5 @@ def scrape_reddit():
             print(f"[Reddit] Error scraping r/{subreddit}: {e}")
             continue
 
-    print(f"[Reddit] Found {len(trends)} trends")
+    print(f"[Reddit] Found {len(trends)} trends from Israeli subreddits")
     return trends

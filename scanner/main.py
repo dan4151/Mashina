@@ -10,7 +10,7 @@ from datetime import datetime
 
 from scrapers.google_trends import scrape_google_trends
 from scrapers.reddit import scrape_reddit
-from scrapers.producthunt import scrape_producthunt
+from scrapers.tiktok import scrape_tiktok
 from scrapers.israeli_news import scrape_israeli_news
 from agent.analyzer import analyze_batch
 from db.models import insert_raw_trend, insert_scored_trend, get_unscored_trends
@@ -24,29 +24,32 @@ def run_scrapers():
     print(f"[Scanner] Starting scan at {datetime.now().isoformat()}")
     print(f"{'='*60}\n")
 
-    all_trends = []
-
-    # Run each scraper
+    # Each tuple is (source_name_for_db, scraper_function)
+    # source_name is stored in raw_trends.source — keep it short and consistent
     scrapers = [
-        ("Google Trends IL", scrape_google_trends),
-        ("Reddit", scrape_reddit),
-        ("Product Hunt", scrape_producthunt),
-        ("Israeli News", scrape_israeli_news),
+        ("google_trends", scrape_google_trends),
+        ("reddit",        scrape_reddit),
+        ("tiktok",        scrape_tiktok),
+        ("israeli_news",  scrape_israeli_news),
     ]
 
-    for name, scraper_fn in scrapers:
+    # Collect (source_name, trend_dict) pairs from all scrapers
+    all_trends = []
+    for source_name, scraper_fn in scrapers:
         try:
-            print(f"\n[Scanner] Running {name}...")
+            print(f"\n[Scanner] Running {source_name}...")
             trends = scraper_fn()
-            all_trends.extend(trends)
+            for t in trends:
+                all_trends.append((source_name, t))
         except Exception as e:
-            print(f"[Scanner] Error in {name}: {e}")
+            print(f"[Scanner] Error in {source_name}: {e}")
 
     # Insert raw trends into DB
+    # insert_raw_trend() handles deduplication — returns None for duplicates
     inserted = 0
-    for trend in all_trends:
+    for source_name, trend in all_trends:
         trend_id = insert_raw_trend(
-            source=trend.get("raw_data", {}).get("type", "unknown"),
+            source=source_name,
             keyword=trend["keyword"],
             title=trend.get("title"),
             description=trend.get("description"),

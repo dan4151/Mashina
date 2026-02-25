@@ -1,29 +1,32 @@
-"""Israeli tech news scraper - fetches from Geektime, Calcalist Tech, etc."""
+"""
+Israeli news scraper - fetches articles from major Israeli news and entertainment sites.
+
+No topic filter — we grab everything that's published, because we want to know
+what Israelis are reading about right now, not just tech/AI.
+The LLM analyzer decides what's worth creating content about.
+"""
 
 import feedparser
 import time
 
-# Israeli tech news RSS feeds
+# Major Israeli news sources with RSS feeds
+# Covers news, tech, entertainment, and lifestyle — all in Hebrew
 FEEDS = [
-    {"name": "Geektime", "url": "https://www.geektime.co.il/feed/", "language": "he"},
-    {"name": "Calcalist Tech", "url": "https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml", "language": "he"},
-    {"name": "Globes Tech", "url": "https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederC?iID=585", "language": "he"},
-]
+    # General news / most-read Israeli portals
+    {"name": "Ynet",          "url": "https://www.ynet.co.il/Integration/StoryRss2.xml",                                   "language": "he"},
+    {"name": "Walla News",    "url": "https://rss.walla.co.il/feed/1",                                                     "language": "he"},
 
-AI_KEYWORDS_HE = [
-    "בינה מלאכותית", "AI", "למידת מכונה", "צ'אט", "GPT", "רובוט",
-    "אוטומציה", "סטארטאפ", "טכנולוגיה", "מודל שפה", "דיפ לרנינג",
-]
-
-AI_KEYWORDS_EN = [
-    "ai", "artificial intelligence", "machine learning", "gpt", "llm",
-    "startup", "automation", "robot", "deep learning", "neural",
+    # Tech & startup focused
+    {"name": "Geektime",      "url": "https://www.geektime.co.il/feed/",                                                   "language": "he"},
+    {"name": "Calcalist Tech","url": "https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml",                         "language": "he"},
+    {"name": "Globes Tech",   "url": "https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederC?iID=585",             "language": "he"},
 ]
 
 
 def scrape_israeli_news():
     """
-    Scrape Israeli tech news sites for AI/tech stories.
+    Scrape Israeli news RSS feeds for any trending stories.
+    No keyword filter — all articles pass through to the LLM for scoring.
     Returns list of dicts with: keyword, title, description, popularity_score, raw_data
     """
     trends = []
@@ -33,37 +36,40 @@ def scrape_israeli_news():
             print(f"[Israeli News] Fetching {feed_info['name']}...")
             feed = feedparser.parse(feed_info["url"])
 
+            if not feed.entries:
+                print(f"[Israeli News] No entries from {feed_info['name']} — feed may be unavailable")
+                time.sleep(1)
+                continue
+
+            # Take the latest 15 articles from each source
             for entry in feed.entries[:15]:
-                title = entry.get("title", "")
-                description = entry.get("summary", "")
+                title = entry.get("title", "").strip()
+                description = entry.get("summary", "").strip()
                 link = entry.get("link", "")
-                text_lower = f"{title} {description}".lower()
 
-                # Check if AI/tech related
-                keywords = AI_KEYWORDS_HE + AI_KEYWORDS_EN
-                is_relevant = any(kw.lower() in text_lower for kw in keywords)
+                if not title:
+                    continue  # Skip entries with no title
 
-                if is_relevant:
-                    trends.append({
-                        "keyword": title[:200],
-                        "title": title,
-                        "description": description[:500],
-                        "url": link,
-                        "popularity_score": 60,
-                        "region": "IL",
-                        "language": feed_info["language"],
-                        "raw_data": {
-                            "source_name": feed_info["name"],
-                            "type": "israeli_news",
-                            "published": entry.get("published", ""),
-                        },
-                    })
+                trends.append({
+                    "keyword": title[:200],
+                    "title": title,
+                    "description": description[:500],
+                    "url": link,
+                    "popularity_score": 60,  # Fixed value — news RSS has no engagement metric
+                    "region": "IL",
+                    "language": feed_info["language"],
+                    "raw_data": {
+                        "source_name": feed_info["name"],
+                        "type": "israeli_news",
+                        "published": entry.get("published", ""),
+                    },
+                })
 
-            time.sleep(1)
+            time.sleep(1)  # Small delay between feeds
 
         except Exception as e:
             print(f"[Israeli News] Error with {feed_info['name']}: {e}")
             continue
 
-    print(f"[Israeli News] Found {len(trends)} AI-related articles")
+    print(f"[Israeli News] Found {len(trends)} articles")
     return trends
