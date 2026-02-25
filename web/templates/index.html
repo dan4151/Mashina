@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trend Scanner</title>
+  <!-- Bootstrap 5 from CDN — no npm needed -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f5f6fa; }
+
+    /* Score badge coloring */
+    .score { display: inline-block; min-width: 28px; text-align: center;
+             font-weight: 700; border-radius: 4px; padding: 1px 5px; font-size: 0.9rem; }
+    .score-high { background: #d1fae5; color: #065f46; }  /* green  ≥ 8  */
+    .score-mid  { background: #fef3c7; color: #92400e; }  /* amber  5–7  */
+    .score-low  { background: #fee2e2; color: #991b1b; }  /* red    ≤ 4  */
+
+    /* Clip long text in table cells */
+    .clip { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Overall score column stands out */
+    .overall-score { font-size: 1.15rem; }
+
+    .navbar-brand { font-weight: 700; letter-spacing: 0.5px; }
+
+    /* Status pills */
+    .status-new        { background: #dbeafe; color: #1e40af; }
+    .status-assigned   { background: #fef9c3; color: #713f12; }
+    .status-production { background: #e0e7ff; color: #3730a3; }
+    .status-published  { background: #dcfce7; color: #14532d; }
+    .status-skipped    { background: #f1f5f9; color: #64748b; }
+    .status-pill { border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark bg-dark px-3 mb-4">
+  <span class="navbar-brand">Trend Scanner &mdash; Israel Market</span>
+  <small class="text-secondary">Showing top 200 rows per table</small>
+</nav>
+
+<div class="container-fluid px-4">
+
+  <!-- ── Stat Cards ── -->
+  <div class="row g-3 mb-4">
+
+    <div class="col-6 col-md-3">
+      <div class="card h-100 text-center shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-primary">{{ raw_count }}</div>
+          <div class="text-muted small">Raw Trends</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="card h-100 text-center shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-success">{{ scored_count }}</div>
+          <div class="text-muted small">Analyzed</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="card h-100 text-center shadow-sm">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-secondary">{{ keywords_count }}</div>
+          <div class="text-muted small">Dedup Keywords</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body py-3">
+          <div class="small fw-semibold text-muted mb-1">By Source</div>
+          {% for s in by_source %}
+          <span class="badge bg-secondary me-1 mb-1">{{ s.source }}: {{ s.count }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /row -->
+
+  <!-- ── Tabs ── -->
+  <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="scored-tab" data-bs-toggle="tab"
+              data-bs-target="#scored" type="button">
+        Top Opportunities
+        <span class="badge bg-success ms-1">{{ scored_count }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="raw-tab" data-bs-toggle="tab"
+              data-bs-target="#raw" type="button">
+        Raw Trends
+        <span class="badge bg-secondary ms-1">{{ raw_count }}</span>
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content bg-white border border-top-0 rounded-bottom shadow-sm p-3 mb-5">
+
+    <!-- ══════════════════════════════════════
+         TAB 1 — Scored / Top Opportunities
+         ══════════════════════════════════════ -->
+    <div class="tab-pane fade show active" id="scored" role="tabpanel">
+
+      <!-- Search + filters (all client-side, no page reload) -->
+      <div class="row g-2 mb-3 align-items-center">
+        <div class="col-md-4">
+          <input type="text" id="scored-search" class="form-control form-control-sm"
+                 placeholder="Search topic, angle, affiliate...">
+        </div>
+        <div class="col-auto">
+          <select id="scored-source" class="form-select form-select-sm">
+            <option value="">All sources</option>
+            {% for s in by_source %}
+            <option value="{{ s.source }}">{{ s.source }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto">
+          <select id="scored-status" class="form-select form-select-sm">
+            <option value="">All statuses</option>
+            <option value="new">new</option>
+            <option value="assigned">assigned</option>
+            <option value="in_production">in_production</option>
+            <option value="published">published</option>
+            <option value="skipped">skipped</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <select id="scored-format" class="form-select form-select-sm">
+            <option value="">All formats</option>
+            <option value="short_video">short_video</option>
+            <option value="reel">reel</option>
+            <option value="carousel">carousel</option>
+            <option value="story">story</option>
+          </select>
+        </div>
+        <div class="col-auto text-muted small" id="scored-count-label"></div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" id="scored-table">
+          <thead class="table-dark">
+            <tr>
+              <th style="width:50px">Score</th>
+              <th>Topic</th>
+              <th>Source</th>
+              <!-- Individual scores with tooltips -->
+              <th title="Israeli audience relevance (1–10)">Rel</th>
+              <th title="Monetization / affiliate potential (1–10)">$$$</th>
+              <th title="Urgency / time sensitivity (1–10)">Urg</th>
+              <th title="Competition: 10 = nobody covered this (1–10)">Comp</th>
+              <th title="Hebrew content gap: 10 = total gap (1–10)">HebGap</th>
+              <th>Format</th>
+              <th>Suggested Angle</th>
+              <th>Affiliate</th>
+              <th>Lang</th>
+              <th>Status</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in scored_trends %}
+            <tr
+              data-source="{{ t.source }}"
+              data-status="{{ t.status }}"
+              data-format="{{ t.suggested_format or '' }}"
+              data-search="{{ (t.topic or '') ~ ' ' ~ (t.suggested_angle or '') ~ ' ' ~ (t.affiliate_opportunities or '') ~ ' ' ~ t.source }}">
+
+              <!-- Overall Score -->
+              <td>
+                <span class="score overall-score
+                  {% if t.overall_score >= 8 %}score-high
+                  {% elif t.overall_score >= 5 %}score-mid
+                  {% else %}score-low{% endif %}">
+                  {{ t.overall_score }}
+                </span>
+              </td>
+
+              <!-- Topic (links to original source) -->
+              <td style="max-width:200px">
+                {% if t.raw_url %}
+                  <a href="{{ t.raw_url }}" target="_blank" rel="noopener"
+                     title="{{ t.topic }}">{{ t.topic[:55] if t.topic else '—' }}</a>
+                {% else %}
+                  <span title="{{ t.topic }}">{{ t.topic[:55] if t.topic else '—' }}</span>
+                {% endif %}
+              </td>
+
+              <td><span class="badge bg-dark">{{ t.source }}</span></td>
+
+              <!-- Individual scores — colored the same way -->
+              {% for val in [t.niche_relevance, t.monetization_score, t.urgency_score, t.competition_score, t.hebrew_gap] %}
+              <td>
+                <span class="score
+                  {% if val >= 8 %}score-high
+                  {% elif val >= 5 %}score-mid
+                  {% else %}score-low{% endif %}">
+                  {{ val }}
+                </span>
+              </td>
+              {% endfor %}
+
+              <td><small class="text-muted">{{ t.suggested_format or '—' }}</small></td>
+
+              <td class="clip" title="{{ t.suggested_angle }}">
+                {{ t.suggested_angle[:90] if t.suggested_angle else '—' }}
+              </td>
+
+              <td class="clip" title="{{ t.affiliate_opportunities }}">
+                {{ t.affiliate_opportunities[:60] if t.affiliate_opportunities else '—' }}
+              </td>
+
+              <td>{{ t.content_language or '—' }}</td>
+
+              <td>
+                {% set sc = t.status %}
+                <span class="status-pill
+                  {% if sc == 'new' %}status-new
+                  {% elif sc == 'assigned' %}status-assigned
+                  {% elif sc == 'in_production' %}status-production
+                  {% elif sc == 'published' %}status-published
+                  {% else %}status-skipped{% endif %}">
+                  {{ sc }}
+                </span>
+              </td>
+
+              <td>
+                <small class="text-muted">
+                  {{ t.analyzed_at.strftime('%d/%m %H:%M') if t.analyzed_at else '—' }}
+                </small>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="14" class="text-center text-muted py-4">
+                No scored trends yet — wait for the analyzer to run.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div><!-- /scored tab -->
+
+
+    <!-- ══════════════════════════════════════
+         TAB 2 — Raw Trends
+         ══════════════════════════════════════ -->
+    <div class="tab-pane fade" id="raw" role="tabpanel">
+
+      <div class="row g-2 mb-3 align-items-center">
+        <div class="col-md-4">
+          <input type="text" id="raw-search" class="form-control form-control-sm"
+                 placeholder="Search title or keyword...">
+        </div>
+        <div class="col-auto">
+          <select id="raw-source" class="form-select form-select-sm">
+            <option value="">All sources</option>
+            {% for s in by_source %}
+            <option value="{{ s.source }}">{{ s.source }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto text-muted small" id="raw-count-label"></div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" id="raw-table">
+          <thead class="table-dark">
+            <tr>
+              <th>Source</th>
+              <th>Title / Keyword</th>
+              <th>Region</th>
+              <th>Lang</th>
+              <th title="Source-specific popularity score (0–100)">Pop.</th>
+              <th>Scraped</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in raw_trends %}
+            <tr
+              data-source="{{ t.source }}"
+              data-search="{{ (t.title or t.keyword or '') ~ ' ' ~ t.source }}">
+
+              <td><span class="badge bg-dark">{{ t.source }}</span></td>
+
+              <td class="clip" title="{{ t.title or t.keyword }}">
+                {% if t.url %}
+                  <a href="{{ t.url }}" target="_blank" rel="noopener">
+                    {{ (t.title or t.keyword or '—')[:90] }}
+                  </a>
+                {% else %}
+                  {{ (t.title or t.keyword or '—')[:90] }}
+                {% endif %}
+              </td>
+
+              <td>{{ t.region }}</td>
+              <td>{{ t.language }}</td>
+
+              <td>
+                <span class="score
+                  {% if t.popularity_score >= 70 %}score-high
+                  {% elif t.popularity_score >= 40 %}score-mid
+                  {% else %}score-low{% endif %}">
+                  {{ t.popularity_score }}
+                </span>
+              </td>
+
+              <td>
+                <small class="text-muted">
+                  {{ t.scraped_at.strftime('%d/%m %H:%M') if t.scraped_at else '—' }}
+                </small>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                No raw trends yet — wait for the scraper to run.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div><!-- /raw tab -->
+
+  </div><!-- /tab-content -->
+</div><!-- /container -->
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── Generic table filter helper ──────────────────────────────────────
+// Hides rows that don't match all active filter values.
+function filterTable(tableId, filters, countLabelId) {
+  const rows = document.querySelectorAll(`#${tableId} tbody tr[data-search]`);
+  let visible = 0;
+  rows.forEach(row => {
+    const search  = (row.dataset.search  || '').toLowerCase();
+    const source  = (row.dataset.source  || '').toLowerCase();
+    const status  = (row.dataset.status  || '').toLowerCase();
+    const format  = (row.dataset.format  || '').toLowerCase();
+
+    const ok =
+      (!filters.text   || search.includes(filters.text))   &&
+      (!filters.source || source === filters.source)        &&
+      (!filters.status || status === filters.status)        &&
+      (!filters.format || format === filters.format);
+
+    row.style.display = ok ? '' : 'none';
+    if (ok) visible++;
+  });
+  if (countLabelId) {
+    document.getElementById(countLabelId).textContent =
+      `Showing ${visible} of ${rows.length}`;
+  }
+}
+
+// ── Scored Trends filters ────────────────────────────────────────────
+const scoredFilters = {};
+function applyScoredFilter() {
+  filterTable('scored-table', scoredFilters, 'scored-count-label');
+}
+
+document.getElementById('scored-search').addEventListener('input', e => {
+  scoredFilters.text = e.target.value.trim().toLowerCase();
+  applyScoredFilter();
+});
+document.getElementById('scored-source').addEventListener('change', e => {
+  scoredFilters.source = e.target.value.toLowerCase();
+  applyScoredFilter();
+});
+document.getElementById('scored-status').addEventListener('change', e => {
+  scoredFilters.status = e.target.value.toLowerCase();
+  applyScoredFilter();
+});
+document.getElementById('scored-format').addEventListener('change', e => {
+  scoredFilters.format = e.target.value.toLowerCase();
+  applyScoredFilter();
+});
+
+// ── Raw Trends filters ───────────────────────────────────────────────
+const rawFilters = {};
+function applyRawFilter() {
+  filterTable('raw-table', rawFilters, 'raw-count-label');
+}
+
+document.getElementById('raw-search').addEventListener('input', e => {
+  rawFilters.text = e.target.value.trim().toLowerCase();
+  applyRawFilter();
+});
+document.getElementById('raw-source').addEventListener('change', e => {
+  rawFilters.source = e.target.value.toLowerCase();
+  applyRawFilter();
+});
+
+// ── Remember active tab across page refreshes ─────────────────────
+const TAB_KEY = 'trend_active_tab';
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+  btn.addEventListener('shown.bs.tab', e => {
+    localStorage.setItem(TAB_KEY, e.target.id);
+  });
+});
+const saved = localStorage.getItem(TAB_KEY);
+if (saved) {
+  const btn = document.getElementById(saved);
+  if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+}
+
+// Init count labels on load
+applyScoredFilter();
+applyRawFilter();
+</script>
+</body>
+</html>
